@@ -74,9 +74,22 @@ function Header({ q, setQ, groups, setGroups, cats, setCats, shown, syncState, v
   );
 }
 
-function Detail({ book, books, onClose, onPick }) {
+function Detail({ book, books, onClose, onPick, onApplyCover }) {
+  const [coverSearch, setCoverSearch] = useState({ status: 'idle', candidates: [], message: '' });
   if (!book) return null;
   const related = books.filter((item) => item.id !== book.id && (item.cat === book.cat || item.author === book.author)).slice(0, 6);
+  const findCovers = async () => {
+    setCoverSearch({ status: 'loading', candidates: [], message: '' });
+    try {
+      const params = new URLSearchParams({ isbn: book.isbn || '', title: book.title, author: book.author });
+      const response = await fetch(`/api/cover-candidates?${params}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || '書影候補の取得に失敗しました');
+      setCoverSearch({ status: 'done', candidates: payload.candidates || [], message: `${payload.candidates?.length || 0}件` });
+    } catch (error) {
+      setCoverSearch({ status: 'error', candidates: [], message: error instanceof Error ? error.message : '書影候補の取得に失敗しました' });
+    }
+  };
   return (
     <aside className="detail">
       <div className="dtop">
@@ -94,6 +107,20 @@ function Detail({ book, books, onClose, onPick }) {
       <p className="meta">{book.author} · {book.pub} · {book.year}</p>
       <p className="key">KEY: {book.concept}</p>
       <p className="note">{book.note}</p>
+      <div className="coverTools">
+        <button onClick={findCovers} disabled={coverSearch.status === 'loading'}>{coverSearch.status === 'loading' ? '検索中…' : '書影候補を探す'}</button>
+        {coverSearch.message && <span>{coverSearch.message}</span>}
+      </div>
+      {coverSearch.candidates.length > 0 && (
+        <div className="coverCandidates">
+          {coverSearch.candidates.map((candidate) => (
+            <button key={candidate.url} onClick={() => onApplyCover(book.id, candidate.url)} title={`${candidate.source} / ${candidate.confidence}`}>
+              <img src={candidate.url} alt={`${book.title} 書影候補`} />
+              <small>{candidate.source}</small>
+            </button>
+          ))}
+        </div>
+      )}
       <h2>関連本</h2>
       {related.map((item) => (
         <button className="rel" key={item.id} onClick={() => onPick(item)}>
@@ -370,6 +397,14 @@ function App() {
     setFocus({ ...book, _t: Date.now() });
   };
 
+  const applyCover = (bookId, cover) => {
+    setBooks((current) => {
+      const next = current.map((book) => (book.id === bookId ? { ...book, cover } : book));
+      localStorage.setItem('syncedBooks', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const syncBooks = async () => {
     setSyncState((current) => ({ ...current, status: 'syncing', message: 'syncing' }));
     try {
@@ -391,7 +426,7 @@ function App() {
       <Header q={q} setQ={setQ} groups={groups} setGroups={setGroups} cats={cats} setCats={setCats} shown={shown} syncState={syncState} viewMode={viewMode} setViewMode={setViewMode} onSync={syncBooks} />
       <div className="shell">
         {viewMode === 'timeline' ? <Swimlane books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} focus={focus} /> : <BookGrid books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} />}
-        <Detail book={books.find((book) => book.id === selectedId)} books={books} onClose={() => setSelectedId(null)} onPick={pick} />
+        <Detail book={books.find((book) => book.id === selectedId)} books={books} onClose={() => setSelectedId(null)} onPick={pick} onApplyCover={applyCover} />
       </div>
     </div>
   );

@@ -61,6 +61,11 @@ export function openBdCoverUrl(isbn = '') {
   return normalized ? `https://cover.openbd.jp/${normalized}.jpg` : '';
 }
 
+export function openLibraryCoverUrl(isbn = '') {
+  const normalized = String(isbn).replace(/[^0-9Xx]/g, '');
+  return normalized ? `https://covers.openlibrary.org/b/isbn/${normalized}-L.jpg` : '';
+}
+
 export function normalizeSheetBooks(rows) {
   return rows
     .filter((row) => row.title || row.Title || row['書名'])
