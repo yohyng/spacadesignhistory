@@ -19,7 +19,7 @@ function Cover({ book, w = 30, h = 42, showText = false }) {
   );
 }
 
-function Header({ q, setQ, groups, setGroups, cats, setCats, shown, syncState, onSync }) {
+function Header({ q, setQ, groups, setGroups, cats, setCats, shown, syncState, viewMode, setViewMode, onSync }) {
   const [open, setOpen] = useState(false);
   const toggle = (set, value) => {
     const next = new Set(set);
@@ -69,7 +69,7 @@ function Header({ q, setQ, groups, setGroups, cats, setCats, shown, syncState, o
           ))}
         </div>
       )}
-      <button className="syncBtn" onClick={onSync} disabled={syncState.status === 'syncing'}>{syncState.status === 'syncing' ? '同期中…' : '同期'}</button><div className="count">{shown === syncState.total ? `${syncState.total}冊` : `${shown} / ${syncState.total} 冊`}</div>
+      <div className="viewSwitch"><button className={viewMode === 'timeline' ? 'on' : ''} onClick={() => setViewMode('timeline')}>年表</button><button className={viewMode === 'grid' ? 'on' : ''} onClick={() => setViewMode('grid')}>グリッド</button></div><button className="syncBtn" onClick={onSync} disabled={syncState.status === 'syncing'}>{syncState.status === 'syncing' ? '同期中…' : '同期'}</button><div className="count">{shown === syncState.total ? `${syncState.total}冊` : `${shown} / ${syncState.total} 冊`}</div>
     </header>
   );
 }
@@ -101,6 +101,32 @@ function Detail({ book, books, onClose, onPick }) {
         </button>
       ))}
     </aside>
+  );
+}
+
+
+function BookGrid({ books, dim, selected, onPick }) {
+  const visible = books.filter((book) => !dim(book));
+  return (
+    <section className="gridView">
+      <div className="gridIntro">
+        <b>BOOK GRID</b>
+        <span>{visible.length}冊を一覧表示</span>
+      </div>
+      <div className="gridBooks">
+        {visible.map((book) => (
+          <button className={selected === book.id ? 'gridCard selected' : 'gridCard'} key={book.id} onClick={() => onPick(book)}>
+            <Cover book={book} w={72} h={102} />
+            <span className="gridMeta">
+              <em>{book.year}</em>
+              <strong>{book.title}</strong>
+              <small>{book.author}</small>
+              <i>{String(book.cat).padStart(2, '0')} {book.catName}</i>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -321,6 +347,7 @@ function App() {
   const [cats, setCats] = useState(new Set());
   const [selectedId, setSelectedId] = useState(null);
   const [focus, setFocus] = useState(null);
+  const [viewMode, setViewMode] = useState('timeline');
 
   const matchesFilter = (book) => (!groups.size || groups.has(book.group)) && (!cats.size || cats.has(book.cat));
   const matchesQuery = (book) => !q || [book.title, book.author, book.concept, book.note].join(' ').toLowerCase().includes(q.toLowerCase());
@@ -361,9 +388,9 @@ function App() {
 
   return (
     <div data-theme="archive">
-      <Header q={q} setQ={setQ} groups={groups} setGroups={setGroups} cats={cats} setCats={setCats} shown={shown} syncState={syncState} onSync={syncBooks} />
+      <Header q={q} setQ={setQ} groups={groups} setGroups={setGroups} cats={cats} setCats={setCats} shown={shown} syncState={syncState} viewMode={viewMode} setViewMode={setViewMode} onSync={syncBooks} />
       <div className="shell">
-        <Swimlane books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} focus={focus} />
+        {viewMode === 'timeline' ? <Swimlane books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} focus={focus} /> : <BookGrid books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} />}
         <Detail book={books.find((book) => book.id === selectedId)} books={books} onClose={() => setSelectedId(null)} onPick={pick} />
       </div>
     </div>

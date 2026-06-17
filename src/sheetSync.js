@@ -56,6 +56,11 @@ export function domainToCat(domain = '') {
   return 12;
 }
 
+export function openBdCoverUrl(isbn = '') {
+  const normalized = String(isbn).replace(/[^0-9Xx]/g, '');
+  return normalized ? `https://cover.openbd.jp/${normalized}.jpg` : '';
+}
+
 export function normalizeSheetBooks(rows) {
   return rows
     .filter((row) => row.title || row.Title || row['書名'])
@@ -65,7 +70,7 @@ export function normalizeSheetBooks(rows) {
       const cat = Number(row.cat || row.categoryId) || domainToCat(row.primaryDomain || row.domain || row['領域']);
       const catInfo = DSA_CATS.find((item) => item.id === cat) || DSA_CATS[11];
       const year = Number.parseInt(row.publishedYear || row.year || row['発行年'], 10) || 2000;
-      const cover = row.coverUrl || row.cover || svgCover(title, author, catInfo.group, index);
+      const cover = row.coverUrl || row.cover || openBdCoverUrl(row.isbn || row.ISBN) || svgCover(title, author, catInfo.group, index);
       return {
         id: index + 1,
         isbn: row.isbn || row.ISBN || '',
