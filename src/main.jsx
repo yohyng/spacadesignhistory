@@ -115,17 +115,49 @@ function midpoint(a, b) {
 function Swimlane({ books, dim, selected, onPick, focus }) {
   const data = useMemo(() => layoutBooks(books), [books]);
   const ref = useRef(null);
-  const gesture = useRef({ pointers: new Map(), start: null, moved: false });
-  const [view, setView] = useState({ s: 0.55, tx: LABEL_W + 20, ty: 20 });
+  const gesture = useRef({ pointers: new Map(), start: null, moved: false, last: null, velocity: { x: 0, y: 0 } });
+  const inertiaFrame = useRef(null);
+  const viewRef = useRef({ s: 0.55, tx: LABEL_W + 20, ty: 20 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [view, setViewState] = useState(viewRef.current);
+  const setView = (next) => {
+    setViewState((current) => {
+      const resolved = typeof next === 'function' ? next(current) : next;
+      viewRef.current = resolved;
+      return resolved;
+    });
+  };
+
+  useEffect(() => () => cancelAnimationFrame(inertiaFrame.current), []);
+
+  const stopInertia = () => cancelAnimationFrame(inertiaFrame.current);
+
+  const animateViewTo = (next, duration = 260) => {
+    stopInertia();
+    const start = performance.now();
+    const from = viewRef.current;
+    const step = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setView({
+        s: from.s + (next.s - from.s) * eased,
+        tx: from.tx + (next.tx - from.tx) * eased,
+        ty: from.ty + (next.ty - from.ty) * eased,
+      });
+      if (t < 1) inertiaFrame.current = requestAnimationFrame(step);
+    };
+    inertiaFrame.current = requestAnimationFrame(step);
+  };
 
   useEffect(() => {
     if (!focus || !ref.current) return;
     const rect = ref.current.getBoundingClientRect();
-    setView((current) => ({
+    const current = viewRef.current;
+    animateViewTo({
       ...current,
       tx: rect.width / 2 - (focus._x + CARD_W / 2) * current.s,
       ty: rect.height / 2 - (data.lanes[focus.cat - 1].y + LANE_PAD + focus._sub * SUB_H + 26) * current.s,
-    }));
+    });
   }, [data.lanes, focus]);
 
   const resolveTap = (event) => {
@@ -140,6 +172,8 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
 
   const onPointerDown = (event) => {
     event.preventDefault();
+    stopInertia();
+    setIsDragging(true);
     ref.current.setPointerCapture(event.pointerId);
     updatePointers(event);
     const pointers = [...gesture.current.pointers.values()];
@@ -148,6 +182,8 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
       pointers.length === 2
         ? { type: 'pinch', pointers, distance: distance(pointers[0], pointers[1]), view }
         : { type: 'pan', x: event.clientX, y: event.clientY, view };
+    gesture.current.last = { x: event.clientX, y: event.clientY, t: performance.now() };
+    gesture.current.velocity = { x: 0, y: 0 };
   };
 
   const onPointerMove = (event) => {
@@ -168,6 +204,11 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
     if (start.type === 'pan') {
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
+      const now = performance.now();
+      const last = gesture.current.last || { x: event.clientX, y: event.clientY, t: now };
+      const dt = Math.max(16, now - last.t);
+      gesture.current.velocity = { x: ((event.clientX - last.x) / dt) * 16, y: ((event.clientY - last.y) / dt) * 16 };
+      gesture.current.last = { x: event.clientX, y: event.clientY, t: now };
       if (Math.hypot(dx, dy) > 2) gesture.current.moved = true;
       setView({ ...start.view, tx: start.view.tx + dx, ty: start.view.ty + dy });
     }
@@ -176,25 +217,43 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
   const onPointerUp = (event) => {
     resolveTap(event);
     gesture.current.pointers.delete(event.pointerId);
+    const shouldGlide = gesture.current.moved && gesture.current.pointers.size === 0;
+    const velocity = { ...gesture.current.velocity };
     gesture.current.start = null;
+    setIsDragging(false);
+    if (!shouldGlide || Math.hypot(velocity.x, velocity.y) < 0.4) return;
+    const glide = () => {
+      velocity.x *= 0.92;
+      velocity.y *= 0.92;
+      setView((current) => ({ ...current, tx: current.tx + velocity.x, ty: current.ty + velocity.y }));
+      if (Math.hypot(velocity.x, velocity.y) > 0.12) inertiaFrame.current = requestAnimationFrame(glide);
+    };
+    inertiaFrame.current = requestAnimationFrame(glide);
   };
 
   return (
     <main
       ref={ref}
+      className={isDragging ? 'dragging' : ''}
       onWheel={(event) => {
         event.preventDefault();
         if (event.shiftKey) {
           setView((current) => ({ ...current, tx: current.tx - event.deltaY }));
           return;
         }
-        const factor = Math.exp(-event.deltaY * (event.ctrlKey || event.metaKey ? 0.012 : 0.0024));
+        stopInertia();
+        const delta = Math.max(-80, Math.min(80, event.deltaY));
+        const factor = Math.exp(-delta * (event.ctrlKey || event.metaKey ? 0.012 : 0.0024));
         setView((current) => zoomAt(current, event.clientX - LABEL_W, event.clientY - 60, factor));
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        setView((current) => zoomAt(current, event.clientX - LABEL_W, event.clientY - 60, 1.8));
+      }}
     >
       <div className="axis" style={{ left: LABEL_W }}>
         {Array.from({ length: 22 }, (_, i) => 1820 + i * 10).map((year) => (
@@ -246,9 +305,9 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
       </div>
       <div className="zoom">
         <b>{Math.round(view.s * 100)}%</b>
-        <button onClick={() => setView((current) => zoomAt(current, 500, 300, 1.3))}>＋</button>
-        <button onClick={() => setView((current) => zoomAt(current, 500, 300, 1 / 1.3))}>－</button>
-        <button onClick={() => setView({ s: 0.55, tx: LABEL_W + 20, ty: 20 })}>全体</button>
+        <button onClick={() => animateViewTo(zoomAt(viewRef.current, (ref.current?.clientWidth || 1000) / 2, (ref.current?.clientHeight || 600) / 2, 1.3))}>＋</button>
+        <button onClick={() => animateViewTo(zoomAt(viewRef.current, (ref.current?.clientWidth || 1000) / 2, (ref.current?.clientHeight || 600) / 2, 1 / 1.3))}>－</button>
+        <button onClick={() => animateViewTo({ s: 0.55, tx: LABEL_W + 20, ty: 20 }, 320)}>全体</button>
       </div>
     </main>
   );
