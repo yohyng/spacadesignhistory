@@ -25,3 +25,11 @@ npm run dev
 - Project Settings → Build & Development Settings の Output Directory が `dist` か確認します。
 - Project Settings → General の Root Directory がリポジトリ直下か確認します。
 - 最新コミットで Redeploy してください。`vercel.json` には SPA fallback の rewrite を入れています。
+
+## Spreadsheet sync
+
+The app starts with bundled seed data and can refresh from the Google Spreadsheet without a redeploy by pressing the **同期** button in the header.
+
+- The button calls `/api/books`.
+- The Vercel API route fetches the spreadsheet as CSV, maps rows into the timeline book model, and returns JSON.
+- Successful sync results are cached in `localStorage`, so the display can reopen with the latest synced data even before the next manual sync.

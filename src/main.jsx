@@ -19,7 +19,7 @@ function Cover({ book, w = 30, h = 42, showText = false }) {
   );
 }
 
-function Header({ q, setQ, groups, setGroups, cats, setCats, shown }) {
+function Header({ q, setQ, groups, setGroups, cats, setCats, shown, syncState, onSync }) {
   const [open, setOpen] = useState(false);
   const toggle = (set, value) => {
     const next = new Set(set);
@@ -69,14 +69,14 @@ function Header({ q, setQ, groups, setGroups, cats, setCats, shown }) {
           ))}
         </div>
       )}
-      <div className="count">{shown === BOOKS.length ? `${BOOKS.length}冊` : `${shown} / ${BOOKS.length} 冊`}</div>
+      <button className="syncBtn" onClick={onSync} disabled={syncState.status === 'syncing'}>{syncState.status === 'syncing' ? '同期中…' : '同期'}</button><div className="count">{shown === syncState.total ? `${syncState.total}冊` : `${shown} / ${syncState.total} 冊`}</div>
     </header>
   );
 }
 
-function Detail({ book, onClose, onPick }) {
+function Detail({ book, books, onClose, onPick }) {
   if (!book) return null;
-  const related = BOOKS.filter((item) => item.id !== book.id && (item.cat === book.cat || item.author === book.author)).slice(0, 6);
+  const related = books.filter((item) => item.id !== book.id && (item.cat === book.cat || item.author === book.author)).slice(0, 6);
   return (
     <aside className="detail">
       <div className="dtop">
@@ -112,8 +112,8 @@ function midpoint(a, b) {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function Swimlane({ dim, selected, onPick, focus }) {
-  const data = useMemo(layoutBooks, []);
+function Swimlane({ books, dim, selected, onPick, focus }) {
+  const data = useMemo(() => layoutBooks(books), [books]);
   const ref = useRef(null);
   const gesture = useRef({ pointers: new Map(), start: null, moved: false });
   const [view, setView] = useState({ s: 0.55, tx: LABEL_W + 20, ty: 20 });
@@ -131,7 +131,7 @@ function Swimlane({ dim, selected, onPick, focus }) {
   const resolveTap = (event) => {
     if (gesture.current.moved) return;
     const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-bookid]');
-    if (target) onPick(BOOKS.find((book) => book.id === Number(target.dataset.bookid)));
+    if (target) onPick(data.lanes.flatMap((lane) => lane.books).find((book) => book.id === Number(target.dataset.bookid)));
   };
 
   const updatePointers = (event) => {
@@ -253,6 +253,8 @@ function Swimlane({ dim, selected, onPick, focus }) {
 }
 
 function App() {
+  const [books, setBooks] = useState(BOOKS);
+  const [syncState, setSyncState] = useState({ status: 'idle', total: BOOKS.length, message: 'seed data' });
   const [q, setQ] = useState('');
   const [groups, setGroups] = useState(new Set());
   const [cats, setCats] = useState(new Set());
@@ -261,18 +263,47 @@ function App() {
 
   const matchesFilter = (book) => (!groups.size || groups.has(book.group)) && (!cats.size || cats.has(book.cat));
   const matchesQuery = (book) => !q || [book.title, book.author, book.concept, book.note].join(' ').toLowerCase().includes(q.toLowerCase());
-  const shown = BOOKS.filter((book) => matchesFilter(book) && matchesQuery(book)).length;
+  const shown = books.filter((book) => matchesFilter(book) && matchesQuery(book)).length;
+  useEffect(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('syncedBooks') || 'null');
+      if (Array.isArray(cached) && cached.length) {
+        setBooks(cached);
+        setSyncState({ status: 'cached', total: cached.length, message: 'local cache' });
+      }
+    } catch {
+      localStorage.removeItem('syncedBooks');
+    }
+  }, []);
+
   const pick = (book) => {
+    if (!book) return;
     setSelectedId(book.id);
     setFocus({ ...book, _t: Date.now() });
   };
 
+  const syncBooks = async () => {
+    setSyncState((current) => ({ ...current, status: 'syncing', message: 'syncing' }));
+    try {
+      const response = await fetch('/api/books');
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.message || 'Sync failed');
+      setBooks(payload.books);
+      setSelectedId(null);
+      setFocus(null);
+      localStorage.setItem('syncedBooks', JSON.stringify(payload.books));
+      setSyncState({ status: 'synced', total: payload.books.length, message: payload.syncedAt });
+    } catch (error) {
+      setSyncState((current) => ({ ...current, status: 'error', message: error instanceof Error ? error.message : 'Sync failed' }));
+    }
+  };
+
   return (
     <div data-theme="archive">
-      <Header q={q} setQ={setQ} groups={groups} setGroups={setGroups} cats={cats} setCats={setCats} shown={shown} />
+      <Header q={q} setQ={setQ} groups={groups} setGroups={setGroups} cats={cats} setCats={setCats} shown={shown} syncState={syncState} onSync={syncBooks} />
       <div className="shell">
-        <Swimlane dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} focus={focus} />
-        <Detail book={BOOKS.find((book) => book.id === selectedId)} onClose={() => setSelectedId(null)} onPick={pick} />
+        <Swimlane books={books} dim={(book) => !matchesFilter(book) || !matchesQuery(book)} selected={selectedId} onPick={pick} focus={focus} />
+        <Detail book={books.find((book) => book.id === selectedId)} books={books} onClose={() => setSelectedId(null)} onPick={pick} />
       </div>
     </div>
   );
