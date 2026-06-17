@@ -5,16 +5,11 @@ import { BOOKS, DSA_CATS, DSA_GROUPS, groupColor } from './data.js';
 import { AXIS_H, CARD_W, LABEL_W, LANE_PAD, SUB_H, baseX, layoutBooks, zoomAt } from './timeline.js';
 
 function Cover({ book, w = 30, h = 42, showText = false }) {
+  const fallback = `linear-gradient(145deg,${groupColor(book.group, 72)},${groupColor(book.group, 38)})`;
   return (
-    <div
-      className="cover"
-      style={{
-        width: w,
-        height: h,
-        background: `linear-gradient(145deg,${groupColor(book.group, 72)},${groupColor(book.group, 38)})`,
-      }}
-    >
-      {showText && (
+    <div className="cover" style={{ width: w, height: h, background: fallback }}>
+      {book.cover ? <img src={book.cover} alt={`${book.title} 書影`} draggable="false" /> : null}
+      {showText && !book.cover && (
         <>
           <b>{book.title}</b>
           <span>{book.author}</span>
