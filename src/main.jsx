@@ -139,6 +139,7 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
   };
 
   const onPointerDown = (event) => {
+    event.preventDefault();
     ref.current.setPointerCapture(event.pointerId);
     updatePointers(event);
     const pointers = [...gesture.current.pointers.values()];
@@ -151,6 +152,7 @@ function Swimlane({ books, dim, selected, onPick, focus }) {
 
   const onPointerMove = (event) => {
     if (!gesture.current.start) return;
+    event.preventDefault();
     updatePointers(event);
     const pointers = [...gesture.current.pointers.values()];
     const start = gesture.current.start;
